@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import cors from "fastify-cors";
+import cors from "@fastify/cors";
 import { leaderboardRoutes } from "./routes/leaderboard.routes";
 import { logger } from "./utils/logger";
 
@@ -9,8 +9,8 @@ export function buildApp() {
   app.register(cors, { origin: true });
 
   // register routes under /api
-  app.register(async (fastify) => {
-    fastify.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
+  app.register(async (fastifyCors) => {
+    fastifyCors.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
   });
 
   // optional: SSE endpoint at /api/leaderboard/stream
