@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { LeaderboardService } from "../services/leaderboard.service";
+import { prisma } from "../lib/prisma";
 
 export async function leaderboardRoutes(fastify: FastifyInstance) {
   // submit score
@@ -28,5 +29,16 @@ export async function leaderboardRoutes(fastify: FastifyInstance) {
     const params = request.params as any;
     const data = await LeaderboardService.getRank(String(params.userId));
     return reply.send(data);
+  });
+
+  // Score history for a user
+  fastify.get("/history/:userId", async (request, reply) => {
+    const params = request.params as any;
+    const logs = await prisma.scoreLog.findMany({
+      where: { userId: String(params.userId) },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    return reply.send(logs);
   });
 }
