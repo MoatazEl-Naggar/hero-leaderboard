@@ -192,7 +192,7 @@ This architecture can power:
 
 # 👤 Author
 
-**Moataz Tarek**  
+**Moataz El-Naggar**  
 Backend Engineer — Realtime Systems, API Design, Scalable Architectures  
 
 If you're reviewing this for hiring or collaboration, feel free to reach out.
