@@ -2,35 +2,66 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { leaderboardRoutes } from "./routes/leaderboard.routes";
-import { logger } from "./utils/logger";
+import pino from "pino";
 
 export function buildApp() {
-  const app = Fastify({ logger: false });
+  // -------------------------------
+  // Create app instance with pino
+  // -------------------------------
+  const app = Fastify({
+    logger: pino({
+      level: process.env.LOG_LEVEL || "info",
+      transport: {
+        target: "pino-pretty",
+        options: {
+          colorize: true,
+          translateTime: "SYS:standard",
+          ignore: "pid,hostname",
+        },
+      },
+    }),
+  });
 
+  // -------------------------------
+  // Logging middleware
+  // -------------------------------
+  app.addHook("onRequest", async (req, reply) => {
+    app.log.info(
+      { method: req.method, url: req.url },
+      "📥 Incoming request"
+    );
+  });
+
+  // -------------------------------
   // CORS
+  // -------------------------------
   app.register(cors, { origin: true });
 
-  // GLOBAL RATE LIMIT
+  // -------------------------------
+  // Global Rate Limit
+  // -------------------------------
   app.register(rateLimit, {
-    max: 100,              // 100 requests
-    timeWindow: "1 minute", // per minute
-    allowList: ["127.0.0.1"], // localhost unlimited (optional)
-    ban: 2,                // Ban user temporarily if they abuse
-    errorResponseBuilder: (req, context) => {
-      return {
-        statusCode: 429,
-        error: "Too Many Requests",
-        message: `Rate limit exceeded: ${context.after}`,
-      };
-    },
+    max: 100, 
+    timeWindow: "1 minute",
+    allowList: ["127.0.0.1"],
+    ban: 2,
+    errorResponseBuilder: (req, context) => ({
+      statusCode: 429,
+      error: "Too Many Requests",
+      message: `Rate limit exceeded. Retry after: ${context.after}`,
+    }),
   });
 
-  // API routes under /api/leaderboard
-  app.register(async (fastify) => {
-    fastify.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
+  // -------------------------------
+  // API Routes
+  // -------------------------------
+  app.register(async (instance) => {
+    instance.register(leaderboardRoutes, { prefix: "/api/leaderboard" });
   });
 
-  // SSE endpoint (stream)
+  // -------------------------------
+  // SSE STREAM (real-time scores)
+  // -------------------------------
   app.get("/api/leaderboard/stream", (req, reply) => {
     reply.raw.setHeader("Content-Type", "text/event-stream");
     reply.raw.setHeader("Cache-Control", "no-cache");
