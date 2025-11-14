@@ -2,43 +2,119 @@ import { FastifyInstance } from "fastify";
 import { LeaderboardService } from "../services/leaderboard.service";
 import { prisma } from "../lib/prisma";
 
-export async function leaderboardRoutes(fastify: FastifyInstance) {
-  // submit score
-  fastify.post("/submit", async (request, reply) => {
-    const body = request.body as any;
-    const { userId, score } = body;
-    if (!userId || typeof score !== "number") {
-      return reply.status(400).send({ error: "userId and numeric score required" });
+export async function leaderboardRoutes(app: FastifyInstance) {
+
+  // -------------------------------------
+  // Submit Score (heavy endpoint)
+  // LIMIT TO 10 req / 10 seconds per user
+  // -------------------------------------
+  app.post("/submit", {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "10 seconds",
+        },
+      },
+      schema: {
+        tags: ["Leaderboard"],
+        description: "Submit or update a user's score.",
+        body: {
+          type: "object",
+          required: ["userId", "score"],
+          properties: {
+            userId: { type: "string" },
+            score: { type: "number" },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { userId, score } = request.body as any;
+      const data = await LeaderboardService.submitScore(userId, score);
+      app.server.emit("score-updated", data);
+      reply.send(data);
     }
-    const result = await LeaderboardService.submitScore(String(userId), score);
-    // optionally notify subscribers via SSE or WS — we'll set that in server.ts
-    fastify.server.emit("score-updated", result);
-    return reply.send(result);
-  });
+  );
 
-  // top N
-  fastify.get("/top/:n", async (request, reply) => {
-    const params = request.params as any;
-    const n = parseInt(params.n) || 10;
-    const top = await LeaderboardService.topN(n);
-    return reply.send(top);
-  });
+  // -------------------------------------
+  // Top N Leaderboard
+  // RELATIVELY LIGHT — allow more hits
+  // -------------------------------------
+  app.get("/top/:n", {
+      config: {
+        rateLimit: {
+          max: 50,
+          timeWindow: "10 seconds",
+        },
+      },
+      schema: {
+        tags: ["Leaderboard"],
+        description: "Get top N leaderboard users.",
+        params: {
+          type: "object",
+          properties: { n: { type: "number" } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const n = Number((req.params as any).n) || 10;
+      const top = await LeaderboardService.topN(n);
+      reply.send(top);
+    }
+  );
 
-  // get rank
-  fastify.get("/rank/:userId", async (request, reply) => {
-    const params = request.params as any;
-    const data = await LeaderboardService.getRank(String(params.userId));
-    return reply.send(data);
-  });
+  // -------------------------------------
+  // Get Rank (very light)
+  // -------------------------------------
+  app.get("/rank/:userId", {
+      config: {
+        rateLimit: {
+          max: 100,
+          timeWindow: "10 seconds",
+        },
+      },
+      schema: {
+        tags: ["Leaderboard"],
+        description: "Get the rank and score of a user.",
+        params: {
+          type: "object",
+          properties: { userId: { type: "string" } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { userId } = req.params as any;
+      reply.send(await LeaderboardService.getRank(userId));
+    }
+  );
 
-  // Score history for a user
-  fastify.get("/history/:userId", async (request, reply) => {
-    const params = request.params as any;
-    const logs = await prisma.scoreLog.findMany({
-      where: { userId: String(params.userId) },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-    return reply.send(logs);
-  });
+  // -------------------------------------
+  // Score History (medium)
+  // -------------------------------------
+  app.get("/history/:userId", {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: "10 seconds",
+        },
+      },
+      schema: {
+        tags: ["Analytics"],
+        description: "Get score history for a user.",
+        params: {
+          type: "object",
+          properties: { userId: { type: "string" } },
+        },
+      },
+    },
+    async (req, reply) => {
+      const { userId } = req.params as any;
+      const logs = await prisma.scoreLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      reply.send(logs);
+    }
+  );
 }
